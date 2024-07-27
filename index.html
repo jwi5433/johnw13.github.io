@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GameStop Stock: Key Moments</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #chart {
+            width: 800px;
+            height: 400px;
+        }
+        .navigation {
+            margin-top: 20px;
+        }
+        button {
+            margin: 0 10px;
+            padding: 5px 10px;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ddd;
+            padding: 10px;
+            display: none;
+        }
+        .caption {
+            text-align: center;
+            margin-top: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+<h1>GameStop Stock: Key Moments</h1>
+<div id="chart"></div>
+<div class="caption" id="caption"></div>
+<div class="navigation">
+    <button id="prevBtn">Previous</button>
+    <button id="nextBtn">Next</button>
+</div>
+<div class="tooltip"></div>
+<script>
+    d3.csv("GME.csv").then(function(csvData) {
+        const data = csvData.map(d => ({
+            date: new Date(d.Date),
+            price: +d.Close
+        })).sort((a, b) => a.date - b.date);
+
+        const preSpikeData = data.filter(d => d.date < new Date('2021-01-01'));
+        const spikeData = data.filter(d => d.date >= new Date('2021-01-01') && d.date <= new Date('2021-01-31'));
+        const postSpikeData = data.filter(d => d.date > new Date('2021-01-31'));
+
+        const lowPrice = d3.min(preSpikeData, d => d.price);
+        const lowPriceDate = preSpikeData.find(d => d.price === lowPrice).date;
+
+        const spikePrice = d3.max(spikeData, d => d.price);
+        const spikePriceDate = spikeData.find(d => d.price === spikePrice).date;
+
+        const postSpikeLow = d3.min(postSpikeData.slice(0, 30), d => d.price);
+        const postSpikeLowDate = postSpikeData.slice(0, 30).find(d => d.price === postSpikeLow).date;
+
+        const recentSpike = d3.max(postSpikeData.slice(-365), d => d.price);
+        const recentSpikeDate = postSpikeData.slice(-365).find(d => d.price === recentSpike).date;
+
+        const margin = {top: 20, right: 20, bottom: 30, left: 50};
+        const width = 800 - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
+
+        const svg = d3.select("#chart")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const x = d3.scaleTime().range([0, width]);
+        const y = d3.scaleLinear().range([height, 0]);
+
+        const line = d3.line()
+            .x(d => x(d.date))
+            .y(d => y(d.price));
+
+        const xAxis = svg.append("g")
+            .attr("transform", `translate(0,${height})`);
+
+        const yAxis = svg.append("g");
+
+        const path = svg.append("path")
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 1.5);
+
+        let currentScene = 0;
+
+        const scenes = [
+            {
+                title: "GME's Low Price Era",
+                dateRange: [new Date(lowPriceDate.getFullYear(), lowPriceDate.getMonth() - 3, 1),
+                    new Date(lowPriceDate.getFullYear(), lowPriceDate.getMonth() + 3, 0)],
+                caption: `In this period, GameStop's stock price was at its lowest before the 2021 surge. The price hit a low of $${lowPrice.toFixed(2)} on ${lowPriceDate.toDateString()}.`
+            },
+            {
+                title: "The Big Spike",
+                dateRange: [new Date('2021-01-01'), new Date('2021-01-31')],
+                caption: `GameStop's stock price skyrocketed in January 2021, reaching an unprecedented high of $${spikePrice.toFixed(2)} on ${spikePriceDate.toDateString()}.`
+            },
+            {
+                title: "The Post-Spike Decline",
+                dateRange: [new Date('2021-01-15'), new Date('2021-03-15')],
+                caption: `After the initial spike, GameStop's stock price fell significantly but remained higher than its pre-spike levels. It dropped to $${postSpikeLow.toFixed(2)} on ${postSpikeLowDate.toDateString()}.`
+            },
+            {
+                title: "Recent Volatility",
+                dateRange: [new Date(recentSpikeDate.getFullYear(), recentSpikeDate.getMonth() - 3, 1),
+                    new Date(recentSpikeDate.getFullYear(), recentSpikeDate.getMonth() + 3, 0)],
+                caption: `GameStop's stock has continued to show volatility, with another significant spike to $${recentSpike.toFixed(2)} on ${recentSpikeDate.toDateString()}.`
+            }
+        ];
+
+        function updateScene(sceneIndex) {
+            const scene = scenes[sceneIndex];
+
+            d3.select("h1").text(scene.title);
+            d3.select("#caption").text(scene.caption);
+
+            x.domain(scene.dateRange);
+            y.domain([0, d3.max(data.filter(d => d.date >= scene.dateRange[0] && d.date <= scene.dateRange[1]), d => d.price) * 1.1]);
+
+            xAxis.transition().duration(1000).call(d3.axisBottom(x));
+            yAxis.transition().duration(1000).call(d3.axisLeft(y));
+
+            path.datum(data.filter(d => d.date >= scene.dateRange[0] && d.date <= scene.dateRange[1]))
+                .transition()
+                .duration(1000)
+                .attr("d", line);
+        }
+
+        const tooltip = d3.select(".tooltip");
+
+        svg.append("rect")
+            .attr("class", "overlay")
+            .attr("width", width)
+            .attr("height", height)
+            .style("opacity", 0)
+            .on("mousemove", mousemove)
+            .on("mouseout", mouseout);
+
+        function mousemove(event) {
+            const [xPos, yPos] = d3.pointer(event);
+            const date = x.invert(xPos);
+            const bisect = d3.bisector(d => d.date).left;
+            const index = bisect(data, date);
+            const d = data[index];
+
+            tooltip.style("display", "block")
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 10) + "px")
+                .html(`Date: ${d.date.toDateString()}<br>Price: $${d.price.toFixed(2)}`);
+        }
+
+        function mouseout() {
+            tooltip.style("display", "none");
+        }
+
+        function nextScene() {
+            currentScene = (currentScene + 1) % scenes.length;
+            updateScene(currentScene);
+        }
+
+        function prevScene() {
+            currentScene = (currentScene - 1 + scenes.length) % scenes.length;
+            updateScene(currentScene);
+        }
+
+        d3.select("#nextBtn").on("click", nextScene);
+        d3.select("#prevBtn").on("click", prevScene);
+
+        updateScene(currentScene);
+    }).catch(function(error) {
+        console.error("Error loading or processing data:", error);
+    });
+</script>
+</body>
+</html>
